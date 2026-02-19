@@ -29,6 +29,7 @@ from final_pipeline.config import (
     DEFAULT_ANGLE_TOLERANCE_DEG,
     __version__,
 )
+from gradio_app.visualizations import create_yield_bar_chart_from_pipeline
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)-8s %(message)s")
 
@@ -51,12 +52,13 @@ def run_analysis(
             "❌ **No file uploaded.** Please drag-and-drop an .ifc file.",
             None,
             None,
+            None,
         )
 
     ifc_path = ifc_file  # Gradio gives us the temp file path as a string
 
     if not os.path.isfile(ifc_path):
-        return "❌ **File not found.** Upload failed.", None, None
+        return "❌ **File not found.** Upload failed.", None, None, None
 
     # ── Parse optional lat/lon ────────────────────────────────────────────
     lat_val = _parse_float(lat)
@@ -78,19 +80,20 @@ def run_analysis(
         )
     except Exception as exc:
         cfg.PANEL_EFFICIENCY = original_eff
-        return f"❌ **Error:** {exc}", None, None
+        return f"❌ **Error:** {exc}", None, None, None
     finally:
         cfg.PANEL_EFFICIENCY = original_eff
 
     # ── Format outputs ────────────────────────────────────────────────────
     if not result.get("ok"):
-        return f"❌ **{result.get('error', 'Unknown error')}**", None, None
+        return f"❌ **{result.get('error', 'Unknown error')}**", None, None, None
 
     report_md = _format_report(result)
     segment_table = _format_segment_table(result)
     score_display = _format_score_badge(result)
+    yield_chart = create_yield_bar_chart_from_pipeline(result)
 
-    return score_display, report_md, segment_table
+    return score_display, report_md, segment_table, yield_chart
 
 
 def _parse_float(s: str) -> float | None:
@@ -274,6 +277,7 @@ def build_app() -> gr.Blocks:
                     value="*Upload a file and click Analyse to see results.*",
                 )
                 report_output = gr.Markdown(label="Report")
+                yield_chart_output = gr.Plot(label="☀️ Solar Yield by Roof Segment")
                 segments_output = gr.Markdown(label="Roof Segments")
 
         # ── Wire button ──────────────────────────────────────────────────
@@ -287,7 +291,7 @@ def build_app() -> gr.Blocks:
                 panel_eff_input,
                 api_toggle,
             ],
-            outputs=[score_output, report_output, segments_output],
+            outputs=[score_output, report_output, segments_output, yield_chart_output],
         )
 
         gr.Markdown(
