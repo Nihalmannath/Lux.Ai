@@ -20,18 +20,15 @@ from __future__ import annotations
 import json
 import logging
 import math
-import os
 import sys
 from pathlib import Path
 
 import ifcopenshell
 
 # ── Ensure package root importable ─────────────────────────────────────────────
-# Path: tools/checker_solar.py  (top-level tools/ inside the repo root)
-# final_pipeline lives at  <repo>/Lux ai tool/final_pipeline/
+# Path: teams/lux-ai/tools/checker_lux_solar.py
 _HERE = Path(__file__).resolve().parent          # tools/
-_REPO_ROOT = _HERE.parent                        # repo root (Lux.Ai/)
-_PACKAGE = _REPO_ROOT / "Lux ai tool"            # contains final_pipeline/
+_PACKAGE = _HERE.parent                          # lux-ai repo root
 if str(_PACKAGE) not in sys.path:
     sys.path.insert(0, str(_PACKAGE))
 
@@ -70,18 +67,6 @@ LEED_PASS_THRESHOLD = 50.0  # % — board decision
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _env_location() -> Location | None:
-    """Try to build a Location from SOLAR_LAT / SOLAR_LON env vars."""
-    lat_s = os.environ.get("SOLAR_LAT")
-    lon_s = os.environ.get("SOLAR_LON")
-    if lat_s and lon_s:
-        try:
-            return Location(latitude=float(lat_s), longitude=float(lon_s), name="env-override")
-        except (ValueError, TypeError):
-            pass
-    return None
-
 
 def _result(
     element_id: str | None,
@@ -402,7 +387,6 @@ def check_solar_production(
     Run PVWatts API for each roof segment and check production > 0 kWh.
 
     Requires location (auto-detected from IfcSite, or pass lat/lon).
-    Falls back to SOLAR_LAT / SOLAR_LON env vars if IfcSite has no coords.
     Returns one element_results row per segment with annual_kwh.
     """
     results: list[dict] = []
@@ -436,13 +420,11 @@ def check_solar_production(
         ))
         return results
 
-    # 2. Location — kwarg → IfcSite → env var → blocked
+    # 2. Location
     if lat is not None and lon is not None:
         location = Location(latitude=lat, longitude=lon, name="override")
     else:
         location = extract_location(model)
-        if location is None:
-            location = _env_location()
         if location is None:
             results.append(_result(
                 element_id=None,
@@ -452,10 +434,7 @@ def check_solar_production(
                 check_status="blocked",
                 actual_value=None,
                 required_value="Latitude and longitude for PVWatts API",
-                comment=(
-                    "No coordinates in IfcSite and SOLAR_LAT/SOLAR_LON env vars not set — "
-                    "cannot query PVWatts."
-                ),
+                comment="No coordinates in IfcSite — cannot query PVWatts. Pass lat/lon manually.",
             ))
             return results
 
@@ -512,7 +491,6 @@ def check_leed_score(
     Calculate LEED renewable-energy score.
     pass if score >= 50 %, fail otherwise.
 
-    Falls back to SOLAR_LAT / SOLAR_LON env vars if IfcSite has no coords.
     Returns one element_results row with the building-level LEED score.
     """
     results: list[dict] = []
@@ -546,13 +524,11 @@ def check_leed_score(
         ))
         return results
 
-    # 2. Location — kwarg → IfcSite → env var → blocked
+    # 2. Location
     if lat is not None and lon is not None:
         location = Location(latitude=lat, longitude=lon, name="override")
     else:
         location = extract_location(model)
-        if location is None:
-            location = _env_location()
         if location is None:
             results.append(_result(
                 element_id=None,
@@ -562,10 +538,7 @@ def check_leed_score(
                 check_status="blocked",
                 actual_value=None,
                 required_value=f"≥ {LEED_PASS_THRESHOLD:.0f}%",
-                comment=(
-                    "No IfcSite coordinates and SOLAR_LAT/SOLAR_LON env vars not set — "
-                    "cannot query PVWatts for LEED calculation."
-                ),
+                comment="No IfcSite coordinates — cannot query PVWatts for LEED calculation.",
             ))
             return results
 
